@@ -111,6 +111,33 @@ incidene_36912 <- incidence_hcm %>%
   theme_void()+
   theme(legend.position = "bottom")
 
+incidence_hcm %>% 
+  group_by(adm_month_year_cut,district2) %>% 
+  count() %>% 
+  ungroup() %>% 
+  group_by(district2) %>% 
+  left_join(.,hcm_pop_19, by = join_by(district2 == district)) %>% 
+  mutate(prevalence_10000 = (n/pop)*10000) %>% 
+  ungroup() %>% 
+  group_by(adm_month_year_cut) %>% 
+  group_modify(~.x %>% mutate(prevalence = n/sum(n)) %>% 
+                 left_join(qhtp, ., by = join_by(varname_2 == district2))) %>% 
+  ggplot() +
+  geom_sf(aes(fill = prevalence_10000,geometry = geom),show.legend = T)+
+  paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
+                                    labels = scales::label_percent(),
+                                    na.value="white",
+                                    name = "Prevalence per 10.000 children")+
+  geom_sf_text(aes(label = nl_name_2,geometry = geom),size=1.5,color = "black")+
+  geom_sf(data = tdnd2, shape = 17,
+          color = "yellow", size = 1)+
+  facet_wrap(~factor(adm_month_year_cut,
+                     levels = c("Apr-June 2024","Jul-Sep 2024","Oct-Dec 2024",
+                                "Jan-Mar 2025","Apr-June 2025")),ncol = 3) +
+  labs(title = "Case prevalence in 2024-2025 outbreak")+
+  theme_void()+
+  theme(legend.position = "bottom")
+
 ## sero
 
 sero_nd2 <- sero %>% filter(hospital == "Bv Nhi Dong 2") %>% 
@@ -502,9 +529,12 @@ incidence_hcm %>%
   filter(district2 %in% district_consider) %>% 
   group_by(district2) %>% 
   count() %>% 
+  ungroup() %>% 
+  group_by(district2) %>% 
+  left_join(.,hcm_pop_19, by = join_by(district2 == district)) %>% 
+  mutate(prevalence_10000 = (n/pop)*10000) %>% 
+  ungroup() %>% 
   left_join(hcm_pop_19, ., by = join_by(district == district2)) %>%
-  na.omit(n) %>%
-  mutate(prevalence = n/pop) %>%
   left_join(qhtp, ., by = join_by(varname_2 == district)) %>% 
   ggplot() +
   geom_sf(aes(fill = prevalence*10000,geometry = geom),show.legend = T)+
@@ -1057,5 +1087,16 @@ vax_cov_age_dis %>%
   theme(axis.text.x = element_text(angle = 45,vjust = 0.5))
 
   
-  
+hcm_pop_19_chil <- census2019 %>% mutate(
+  district = district %>% 
+    str_replace_all(
+      c("Quận 2" = "Thủ Đức",
+        "Quận 9" = "Thủ Đức")) %>% 
+    str_remove("Quận|Huyện") %>%
+    trimws(which = "both") %>% 
+    stri_trans_general("latin-ascii") %>% 
+    tolower()) %>% 
+  filter(age2 <= 15) %>% 
+  group_by(district) %>% 
+  summarise(pop = sum(n))
   

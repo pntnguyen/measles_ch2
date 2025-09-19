@@ -59,6 +59,20 @@ census2019 <- readRDS("D:/OUCRU/hfmd/data/census2019.rds") %>%
   filter(province == "Thành phố Hồ Chí Minh") %>% 
   mutate(age2 = word(age,1))
 
+hcm_pop_19 <- census2019 %>% mutate(
+  district = district %>% 
+    str_replace_all(
+      c("Quận 2" = "Thủ Đức",
+        "Quận 9" = "Thủ Đức")) %>% 
+    str_remove("Quận|Huyện") %>%
+    trimws(which = "both") %>% 
+    stri_trans_general("latin-ascii") %>% 
+    tolower()) %>% 
+    filter(age2 <= 15) %>% 
+    group_by(district) %>% 
+    summarise(pop = sum(n))
+
+
 ### HCMC map
 map_path <- "D:/OUCRU/HCDC/project phân tích sero quận huyện/"
 vn_qh <- st_read(dsn = file.path(map_path, "gadm41_VNM.gpkg"), layer = "ADM_ADM_2")
@@ -134,15 +148,18 @@ incidene_36912 <- incidence_hcm %>%
   group_by(adm_month_year_cut,district2) %>% 
   count() %>% 
   ungroup() %>% 
+  group_by(district2) %>% 
+  left_join(.,hcm_pop_19, by = join_by(district2 == district)) %>% 
+  mutate(prevalence_10000 = (n/pop)*10000) %>% 
+  ungroup() %>% 
   group_by(adm_month_year_cut) %>% 
   group_modify(~.x %>% mutate(prevalence = n/sum(n)) %>% 
-               left_join(qhtp, ., by = join_by(varname_2 == district2))) %>% 
+                 left_join(qhtp, ., by = join_by(varname_2 == district2))) %>% 
   ggplot() +
-  geom_sf(aes(fill = prevalence,geometry = geom),show.legend = T)+
+  geom_sf(aes(fill = prevalence_10000,geometry = geom),show.legend = T)+
   paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
-                                    labels = scales::label_percent(),
                                     na.value="white",
-                                    name = "Prevalence")+
+                                    name = "Prevalence per 10.000 children")+
   geom_sf_text(aes(label = nl_name_2,geometry = geom),size=1.5,color = "black")+
   geom_sf(data = tdnd2, shape = 17,
           color = "yellow", size = 1)+
@@ -151,7 +168,8 @@ incidene_36912 <- incidence_hcm %>%
                                 "Jan-Mar 2025","Apr-June 2025")),ncol = 3) +
   labs(title = "Prevalence in 2024-2025 outbreak")+
   theme_void()+
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom",
+        legend.key.width =  unit(1, "cm"))
 
 incidene_36912
 ```
@@ -196,15 +214,18 @@ cases_hcm_1819 %>%
   group_by(adm_month_year_cut,district2) %>% 
   count() %>% 
   ungroup() %>% 
+  group_by(district2) %>% 
+  left_join(.,hcm_pop_19, by = join_by(district2 == district)) %>% 
+  mutate(prevalence_10000 = (n/pop)*10000) %>% 
+  ungroup() %>% 
   group_by(adm_month_year_cut) %>% 
   group_modify(~.x %>% mutate(prevalence = n/sum(n)) %>% 
                  left_join(qhtp, ., by = join_by(varname_2 == district2))) %>% 
   ggplot() +
-  geom_sf(aes(fill = prevalence,geometry = geom),show.legend = T)+
+  geom_sf(aes(fill = prevalence_10000,geometry = geom),show.legend = T)+
   paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
-                                    labels = scales::label_percent(),
                                     na.value="white",
-                                    name = "Prevalence")+
+                                    name = "Prevalence per 10.000 children")+
   geom_sf_text(aes(label = nl_name_2,geometry = geom),size=1.5,color = "black")+
   geom_sf(data = tdnd2, shape = 17,
           color = "yellow", size = 1)+
@@ -215,7 +236,8 @@ cases_hcm_1819 %>%
              ncol = 4) +
   labs(title = "Prevalence in 2018-2019 outbreak")+
   theme_void()+
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom",
+        legend.key.width =  unit(1, "cm"))
 ```
 
 ## Sero
@@ -288,7 +310,7 @@ Cummulative \ cases \ rate &= \frac{observed \ cases \ (districts)}{expected \ c
 $$
 
 $$
-cummulative \ cases \  rate \ (hospitals)= \frac{cases \ observed \ (hospital)}{population \ of \ HCMC}
+cummulative \ cases \  rate \ (hospitals)= \frac{cases \ observed \ (hospital)}{population \ of \ children \ under \ 15 \ in \ HCMC}
 $$
 
 ::: callout-note
@@ -304,17 +326,7 @@ A district was included in the catchment area if the upper limit of the 95% conf
 #| fig-height: 6 
 #| out-width: "100%"
 
-hcm_pop_19 <- census2019 %>% mutate(
-  district = district %>% 
-    str_replace_all(
-      c("Quận 2" = "Thủ Đức",
-        "Quận 9" = "Thủ Đức")) %>% 
-    str_remove("Quận|Huyện") %>%
-    trimws(which = "both") %>% 
-    stri_trans_general("latin-ascii") %>% 
-    tolower()) %>% 
-  group_by(district) %>% 
-  summarise(pop = sum(n))
+
 
 ch2_obs <- incidence_hcm %>% nrow()
 
@@ -743,13 +755,11 @@ left_join(pre_dis_agr,sneg_dis_agr,by = join_by(district2,
 
 ## Serological data
 
-In this section, I followed the [@hens2015] article. Using GAM model fitted to seroprevalence data of districts in CH2 catchment area with cloglog link function. The smooth function $s_1$ was one-dimensional cubic splines, and $te$ referring to tensor product thin-plate regression splines allowing for
-differential smoothing along the two dimensions. 
+In this section, I followed the [@hens2015] article. Using GAM model fitted to seroprevalence data of districts in CH2 catchment area with cloglog link function. The smooth function $s_1$ was one-dimensional cubic splines, and $te$ referring to tensor product thin-plate regression splines allowing for differential smoothing along the two dimensions.
 
 $$
 seropositive \sim s_1(age) + te(x,y)
-$$
-With  x, y are spatial coordinates.
+$$ With x, y are spatial coordinates.
 
 ```{r}
 ## extract x and y coordinates
@@ -779,8 +789,7 @@ sero_nd2_cm_23 <- sero_nd2 %>%
   left_join(.,district_xy, by = join_by(district2 == district))
 ```
 
-::: {.panel-tabset .nav-pills}
-
+:::: {.panel-tabset .nav-pills}
 ## Model
 
 ```{r}
@@ -828,8 +837,7 @@ The order of legend is similiar with the color line
 ```{r}
 sero_nd2_cm_23 %>% head(20)
 ```
-
-:::
+::::
 
 ## Vaccine coverage data
 
@@ -839,7 +847,7 @@ $$
 1-s_{(a)} = e^{-\gamma_2 \times (a-{age\ at \ dose \ 2})} \times \rho v_2
 $$
 
-$\rho$ is the seroconversion rate = 0.977 (95% CI: 0.959 − 0.990), $\gamma_2$ is the decay rates of vaccine-induced immunity related to dose 2, age at dose 2 is 18 month = 1.5 years. $v_2$ is the measles dose 2 vaccine coverage of districts 
+$\rho$ is the seroconversion rate = 0.977 (95% CI: 0.959 − 0.990), $\gamma_2$ is the decay rates of vaccine-induced immunity related to dose 2, age at dose 2 is 18 month = 1.5 years. $v_2$ is the measles dose 2 vaccine coverage of districts
 
 ```{r}
 #| fig-width: 10
