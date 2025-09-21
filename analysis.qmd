@@ -297,6 +297,102 @@ sero_negative_district <- sero_nd2 %>%
 sero_negative_district  
 ```
 
+## Total number of cases and sero samples
+
+```{r}
+#| fig-width: 8
+#| fig-height: 6 
+#| out-width: "100%"
+
+p_num_cases_24 <- incidence_hcm %>% 
+  group_by(district2) %>% 
+  count() %>% 
+  left_join(qhtp, ., by = join_by(varname_2 == district2)) %>%
+  ungroup() %>% 
+  ggplot() +
+  geom_sf(aes(fill = n,geometry = geom),show.legend = T)+
+  paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
+                                    # labels = scales::label_percent(),
+                                    na.value="white",
+                                    name = "Number of cases")+
+  geom_sf_text(aes(label = nl_name_2,geometry = geom),size=1.5,color = "black")+
+  geom_sf(data = tdnd2, shape = 17,
+          color = "yellow", size = 1)+
+  labs(title = "2024-2025")+
+  theme_void()+
+  theme(legend.position = "bottom")
+
+p_num_cases_18 <- cases_hcm_1819 %>% 
+  group_by(district2) %>% 
+  count() %>% 
+  left_join(qhtp, ., by = join_by(varname_2 == district2)) %>%
+  ungroup() %>% 
+  ggplot() +
+  geom_sf(aes(fill = n,geometry = geom),show.legend = T)+
+  paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
+                                    # labels = scales::label_percent(),
+                                    na.value="white",
+                                    name = "Number of cases")+
+  geom_sf_text(aes(label = nl_name_2,geometry = geom),size=1.5,color = "black")+
+  geom_sf(data = tdnd2, shape = 17,
+          color = "yellow", size = 1)+
+  labs(title = "2018-2019")+
+  theme_void()+
+  theme(legend.position = "bottom")
+
+p_num_sero <-sero_nd2 %>% 
+  group_by(district2) %>% 
+  count() %>% 
+  left_join(qhtp, ., by = join_by(varname_2 == district2)) %>%
+  ungroup() %>% 
+  ggplot() +
+  geom_sf(aes(fill = n,geometry = geom),show.legend = T)+
+  paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
+                                    na.value="white",
+                                    name = "Number of \n serum samples")+
+  geom_sf_text(aes(label = nl_name_2,geometry = geom),size=1.5,color = "black")+
+  geom_sf(data = tdnd2, shape = 17,
+          color = "yellow", size = 1)+
+  labs(title = "Dec 2022 - Dec 2023")+
+  theme_void()+
+  theme(legend.position = "bottom")
+
+p_num_cases_24 | p_num_cases_18 | p_num_sero
+
+```
+
+## Correlation between number of cases and serum samples
+
+```{r}
+#| fig-width: 8
+#| fig-height: 5 
+#| out-width: "100%"
+
+library(ggstatsplot)
+
+num_sero <- sero_nd2 %>% 
+  group_by(district2) %>% 
+  count()
+
+numcase_24 <- incidence_hcm %>% 
+  group_by(district2) %>% 
+  count()
+
+
+left_join(numcase_24,num_sero,by = join_by(district2)) %>% 
+  set_colnames(c("district","num_cases","num_sero")) %>% 
+  ggscatterstats(
+    x = num_cases,
+    y = num_sero,
+    bf.message = FALSE,
+    marginal = FALSE, 
+    label.var = district,
+    xlab = "Number of measles cases in 2024",
+    ylab = "Number of serum samples from 2022"
+    )
+```
+
+
 # Catchment area
 
 Catchment area of Children Hospital 2 was calculated by cummulative cases ratio method [@zinszer2014].
@@ -491,8 +587,6 @@ I plotted prevalence and sero-negativity to see whether there is a linear relati
 #| fig-width: 8
 #| fig-height: 5 
 #| out-width: "100%"
-
-library(ggstatsplot)
 
 sero_cm <- sero_nd2 %>% 
   filter(district2 %in% district_consider) %>% 

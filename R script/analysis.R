@@ -345,6 +345,89 @@ cases_hcm_1819 %>%
   theme_void()+
   theme(legend.position = "bottom")
 
+
+## number of cases and number of serosample collected in each districts
+
+incidence_hcm %>% 
+  group_by(district2) %>% 
+  count() %>% 
+  left_join(qhtp, ., by = join_by(varname_2 == district2)) %>%
+  ungroup() %>% 
+  ggplot() +
+  geom_sf(aes(fill = n,geometry = geom),show.legend = T)+
+  paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
+                                    # labels = scales::label_percent(),
+                                    na.value="white",
+                                    name = "Number of cases")+
+  geom_sf_text(aes(label = nl_name_2,geometry = geom),size=1.5,color = "black")+
+  geom_sf(data = tdnd2, shape = 17,
+          color = "yellow", size = 1)+
+  labs(title = "2024-2025")+
+  theme_void()+
+  theme(legend.position = "bottom")
+
+cases_hcm_1819 %>% 
+  group_by(district2) %>% 
+  count() %>% 
+  left_join(qhtp, ., by = join_by(varname_2 == district2)) %>%
+  ungroup() %>% 
+  ggplot() +
+  geom_sf(aes(fill = n,geometry = geom),show.legend = T)+
+  paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
+                                    # labels = scales::label_percent(),
+                                    na.value="white",
+                                    name = "Number of cases")+
+  geom_sf_text(aes(label = nl_name_2,geometry = geom),size=1.5,color = "black")+
+  geom_sf(data = tdnd2, shape = 17,
+          color = "yellow", size = 1)+
+  labs(title = "2018-2019")+
+  theme_void()+
+  theme(legend.position = "bottom")
+
+sero_nd2 %>% 
+  group_by(district2) %>% 
+  count() %>% 
+  left_join(qhtp, ., by = join_by(varname_2 == district2)) %>%
+  ungroup() %>% 
+  ggplot() +
+  geom_sf(aes(fill = n,geometry = geom),show.legend = T)+
+  paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
+                                    na.value="white",
+                                    name = "Number of serum sampples")+
+  geom_sf_text(aes(label = nl_name_2,geometry = geom),size=1.5,color = "black")+
+  geom_sf(data = tdnd2, shape = 17,
+          color = "yellow", size = 1)+
+  theme_void()+
+  theme(legend.position = "bottom")
+  
+num_sero <- sero_nd2 %>% 
+  group_by(district2) %>% 
+  count()
+
+numcase_24 <- incidence_hcm %>% 
+  group_by(district2) %>% 
+  count()
+
+library(ggstatsplot)
+
+left_join(numcase_24,num_sero,by = join_by(district2)) %>%  
+  ggplot(aes(x = n.x, y = n.y))+
+  geom_point()+
+  geom_text()
+
+left_join(numcase_24,num_sero,by = join_by(district2)) %>% 
+  set_colnames(c("district","num_cases","num_sero")) %>% 
+  filter(district %in% district_consider) %>% 
+  ggscatterstats(
+    x = num_cases,
+    y = num_sero,
+    bf.message = FALSE,
+    marginal = FALSE, 
+    label.var = district,
+    xlab = "Number of measles cases in 2024",
+    ylab = "Number of serum samples from 2022"
+    )
+
 ## hospital catchment using cummulative cases rate
 
 hcm_pop_19 <- census2019 %>% mutate(
