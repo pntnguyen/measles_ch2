@@ -141,26 +141,16 @@ incidence_hcm %>%
 ## sero
 
 sero_nd2 <- sero %>% filter(hospital == "Bv Nhi Dong 2") %>% 
-  select(pos,district,age,age_1y,age_5y,sampling_period)
-
-sero_nd2$district2 <- sero_nd2$district %>% 
-  stri_trans_general("latin-ascii") %>% 
-  str_remove("Tp|^0") %>%
-  trimws(which = "both") %>% 
-  tolower() 
-
-sero_nd2$sampling_period <- sero_nd2$sampling_period %>% as.Date() 
-
-sero_nd2 %>% 
-mutate(
-  district2 = district %>% 
-    stri_trans_general("latin-ascii") %>% 
-    str_remove("Tp|^0") %>%
-    trimws(which = "both") %>% 
-    tolower() ,
-  adm_month = month(sampling_period),
-  adm_year = year(sampling_period)
-) 
+  select(pos,district,age,age_1y,age_5y,sampling_period,dob) %>%
+  mutate(
+    district2 = district %>% 
+      stri_trans_general("latin-ascii") %>%
+      str_remove("Tp|^0") %>%
+      trimws(which = "both") %>%
+      tolower() ,
+    adm_month = month(sampling_period),
+    adm_year = year(sampling_period)
+    ) 
 
 sero_negative_district <- sero_nd2 %>% 
   group_by(sampling_period,district2) %>% 
@@ -1043,7 +1033,6 @@ vax_cov_age_dis <- vaxreg_hcmc_measles %>%
   ungroup() %>% 
   mutate(m2_covr = m2_1/(m2_0+m2_1))
 
-vax_cov_age_dis %>% View()
 
 new_df2 <- district_xy %>% 
   filter(district %in% district_consider) %>% 
@@ -1182,4 +1171,106 @@ hcm_pop_19_chil <- census2019 %>% mutate(
   filter(age2 <= 15) %>% 
   group_by(district) %>% 
   summarise(pop = sum(n))
+  
+
+## calculation something between vaccine coverage and seronegative 
+
+p_vc_cm <- vax_cov_age_dis %>% 
+  filter(district2 %in% district_consider) %>% 
+  ggplot(aes(x = age_round_23, y = m2_covr))+
+  geom_line()+
+  facet_wrap(~district2)
+
+p_incind_cm <- incidence_hcm %>% 
+  group_by(district2,agegr2) %>%
+  count() %>% 
+  filter(district2 %in% district_consider) %>%  
+  ggplot(aes(x = agegr2, y = n))+
+  geom_col()+
+  facet_wrap(~district2)
+
+p_vc_cm | p_incind_cm
+  
+incidence_hcm %>% 
+  group_by(district2,agegr2) %>%
+  count() %>% 
+  filter(district2 %in% district_consider) %>%  
+  ggplot(aes(x = agegr2, y = n,fill = factor(district2)))+
+  geom_col(position = "dodge", color = "black")+
+  labs(x = "Age group", y = "Number of cases", fill = "District") +
+  theme_minimal()
+
+vaxreg_cm <- vaxreg_hcmc_measles %>% 
+  mutate(age_at_2023 = interval(dob, as.Date("2023-12-31")) / years(1),
+         age_round_23 = round(age_at_2023),
+         district2 = district %>% 
+           trimws(which = "both") %>% 
+           stri_trans_general("latin-ascii") %>% 
+           tolower()) %>% 
+  group_by(district2) %>% 
+  count(is_m2) %>% 
+  pivot_wider(names_from = is_m2, 
+              values_from = n,
+              names_prefix = "m2_") %>% 
+  replace(is.na(.), 0) %>% 
+  ungroup() %>% 
+  mutate(m2_covr = m2_1/(m2_0+m2_1))%>% 
+  filter(district2 %in% district_consider)
+
+sero_nd2 %>% 
+  filter(district2 %in% district_consider) %>%
+  group_by(district2) %>% 
+  count(pos) %>% 
+  pivot_wider(names_from = pos, 
+              values_from = n,
+              names_prefix = "pos_") %>% 
+  replace(is.na(.), 0) %>% 
+  ungroup() %>% 
+  mutate(total = pos_0+pos_1,
+         sp = pos_1/total,
+         sneg = 1 - sp) %>% 
+  left_join(.,vaxreg_cm,by  = join_by(district2)) %>% 
+  ggplot(aes(x = m2_covr, y = sp))+
+  geom_point()+
+  scale_x_continuous(limits = c(0,1),
+                     labels = scales::label_percent(),
+                     name = "Vaccine coverage (%)")+  
+  scale_y_continuous(limits = c(0,1),
+                     labels = scales::label_percent(),
+                     name = "Seroprevalence (%)")+
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "blue")+
+  # geom_text(aes(label = district2), vjust = -0.5, size = 3)+
+  theme_bw()
+
+
+## contact maxtrix
+
+mu_allocation_vn <- read_excel("D:/OUCRU/sero_measles_nd2/data/contact_matrices_152_countries/MUestimates_all_locations_2.xlsx", 
+                               sheet = "Viet Nam", col_names = FALSE)
+
+library(reshape2)
+
+mat <- as.matrix(mu_allocation_vn)
+
+mat$age_from <- seq(0, 75, by = 5)  # 16 rows = 0–75 by 5
+
+# Reshape into long format
+df_long <- df %>%
+  pivot_longer(
+    cols = starts_with("..."),
+    names_to = "age_to",
+    values_to = "contacts"
+  ) %>%
+  mutate(
+    # convert "...1", "...2", etc. into numeric age groups
+    age_to = as.numeric(gsub("\\.\\.\\.", "", age_to)),
+    age_to = (age_to - 1) * 5  # each column = 5-year bin
+  )
+
+ggplot(df_long, aes(x = age_from, y = age_to, fill = contacts)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(
+    low = "white", 
+    high = "#08306B"   # deep blue (you can try "#2171B5" for lighter)
+  )
   
