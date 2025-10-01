@@ -500,8 +500,6 @@ num_sero_3hos_p <- rbind(num_sero_ch1,num_sero_ch2_cch) %>%
 num_cases_3hos|num_sero_3hos_p
 ```
 
-
-
 ## Correlation between number of cases and serum samples
 
 ```{r}
@@ -532,7 +530,6 @@ left_join(numcase_24,num_sero,by = join_by(district2)) %>%
     ylab = "Number of serum samples from 2022"
     )
 ```
-
 
 # Catchment area
 

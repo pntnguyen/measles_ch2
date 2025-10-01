@@ -418,6 +418,136 @@ left_join(numcase_24,num_sero,by = join_by(district2)) %>%
     ylab = "Number of serum samples from 2022"
     )
 
+## data description for CCH and CH1
+measles_1825_eoc <- read_excel("D:/OUCRU/sero_measles_nd2/data/SOI_2018-2025_EOC.xlsx", 
+                                sheet = "SOI_2018-2025")
+
+## filter bv nhi
+measles_1825_eoc %>% 
+  clean_names() %>% 
+  filter(grepl('Nhi|nhi', ten_bv)) %>% 
+  pull(ten_bv) %>% unique()
+
+meases_1812_3hos <- measles_1825_eoc %>% 
+  clean_names() %>% 
+  filter(ten_bv %in% c("Bệnh viện Nhi đồng 1",
+                       "Bệnh viện Nhi Đồng 1",
+                       "BV Nhi Đồng 1",
+                       "Bệnh viện Nhi đồng thành phố",
+                       "Bệnh viện Nhi đồng 2",
+                       "Bệnh viện Nhi Đồng 2")) %>% 
+  mutate(
+    district = quan_huyen %>% 
+      str_replace_all(
+        c("Quận 2" = "Thủ Đức",
+          "Quận 9" = "Thủ Đức")) %>% 
+      str_remove("Quận|Huyện|Thành phố|QUẬN") %>%
+      trimws(which = "both") %>% 
+      stri_trans_general("latin-ascii") %>% 
+      tolower(),
+    admission = as.Date(ngay_nv,format = "%d/%m/%Y"),
+    hospital = ten_bv %>% 
+      str_replace_all(
+        c("BV Nhi Đồng 1" = "Bệnh viện Nhi Đồng 1")) %>%
+      trimws(which = "both") %>% 
+      stri_trans_general("latin-ascii") %>% 
+      tolower() %>% 
+      factor(levels = c("benh vien nhi dong 1",
+                        "benh vien nhi dong 2",
+                        "benh vien nhi dong thanh pho"),
+             labels = c("Children's Hospital 1",
+                        "Children's Hospital 2",
+                        "City Children's Hospital")),
+    out_year = case_when(
+      nam_nv %in% c(2018,2019) ~ "2018-2019",
+      nam_nv %in% c(2024,2025) ~ "2024-2025"
+      )
+    ) %>% 
+  filter(district %in% qhtp$varname_2) %>%
+  distinct(.keep_all = TRUE)
+
+
+num_cases_3hos <- meases_1812_3hos %>% 
+  filter(!is.na(out_year)) %>% 
+  group_by(hospital,district,out_year) %>% 
+  count() %>% 
+  ungroup() %>% 
+  group_by(hospital,out_year) %>% 
+  group_modify(~.x %>% left_join(qhtp, ., by = join_by(varname_2 == district))) %>% 
+  ungroup() %>% 
+  ggplot() +
+  geom_sf(aes(fill = n,geometry = geom),
+          show.legend = T)+
+  paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
+                                    na.value="white",
+                                    name = "Number of cases")+
+  geom_sf_text(aes(label = nl_name_2,geometry = geom),size=1.5,color = "black")+
+  # geom_sf(data = tdnd2, shape = 17,
+  #         color = "yellow", size = 1)+
+  facet_grid(hospital ~ out_year,
+             switch = "y") +
+  theme_void()+
+  theme(legend.position = "bottom",
+        legend.key.width =  unit(1, "cm"))
+
+sero_ch1 <- read_csv("D:/OUCRU/sero_measles_nd2/data/20240808_measles_titer_oucru.csv")
+
+## dec 2022 - Apr 2024
+num_sero_ch1 <- sero_ch1 %>% 
+  select(district,doc,moc,yoc) %>% 
+  na.omit(district) %>% 
+  mutate(district = district %>%
+           trimws(which = "both") %>% 
+           stri_trans_general("latin-ascii") %>% 
+           tolower()) %>% 
+  group_by(district) %>% 
+  count() %>% 
+  mutate(hospital = rep("nd1"),
+         col = rep("Dec 2022 - Apr 2024"))%>% 
+  ungroup()
+
+num_sero_ch2_cch <- sero  %>% 
+  select(pos,district,age,age_1y,age_5y,sampling_period,hospital) %>% 
+  mutate(
+    district = district %>% 
+      stri_trans_general("latin-ascii") %>% 
+      str_remove("Tp|^0") %>%
+      trimws(which = "both") %>% 
+      tolower() ,
+    samp_month = month(sampling_period),
+    samp_year = year(sampling_period)
+  ) %>% 
+  group_by(hospital,district) %>% 
+  count() %>% 
+  mutate(col = rep("Dec 2022 - Dec 2023")) %>% 
+  ungroup()
+
+
+num_sero_3hos_p <- rbind(num_sero_ch1,num_sero_ch2_cch) %>% 
+  group_by(hospital) %>% 
+  group_modify(~.x %>% left_join(qhtp, ., by = join_by(varname_2 == district))) %>% 
+  ungroup() %>% 
+  ggplot() +
+  geom_sf(aes(fill = n,geometry = geom),
+          show.legend = T)+
+  paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
+                                    na.value="white",
+                                    name = "Number of serum samples")+
+  geom_sf_text(aes(label = nl_name_2,geometry = geom),size=1.5,color = "black")+
+  # geom_sf(data = tdnd2, shape = 17,
+  #         color = "yellow", size = 1)+
+  facet_wrap(~factor(hospital,
+                     levels = c("nd1","Bv Nhi Dong 2","Bv Nhi Dong Tp"),
+                     labels = c("Dec 2022 - Apr 2024",
+                                "Dec 2022 - Dec 2023",
+                                "Dec 2022-Dec 2023")),
+             ncol = 1) +
+  theme_void()+
+  theme(legend.position = "bottom",
+        legend.key.width =  unit(1, "cm"))
+  
+num_cases_3hos|num_sero_3hos_p
+
 ## hospital catchment using cummulative cases rate
 
 hcm_pop_19 <- census2019 %>% mutate(
@@ -940,18 +1070,6 @@ plot(output)
 output$R
 
 ## multicohort model
-
-centroids <- st_centroid(qhtp)
-
-district_xy <- centroids %>%
-  mutate(
-    lon = st_coordinates(centroids)[,1],
-    lat = st_coordinates(centroids)[,2]
-  ) %>%
-  select(district = varname_2, lon, lat) %>% 
-  as.data.frame() %>% 
-  select(-geom)
-
 
 
 sero_nd2_cm_23 <- sero_nd2 %>% 
