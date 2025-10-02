@@ -1391,4 +1391,276 @@ ggplot(df_long, aes(x = age_from, y = age_to, fill = contacts)) +
     low = "white", 
     high = "#08306B"   # deep blue (you can try "#2171B5" for lighter)
   )
+
+
+### if not include CH2
+
+age_profile <- function(data, age_values = seq(0, 16, le = 512), ci = .95) {
+  model <- data %>% 
+    group_by(age424) %>%
+    count(pos) %>% 
+    pivot_wider(names_from = pos,
+                values_from = n,
+                names_prefix = "pos_") %>% 
+    replace(is.na(.), 0) %>% 
+    ungroup() %>% 
+    mutate(total = pos_0+pos_1,
+           sp = pos_1/total,
+           sneg = 1 - sp) %>% 
+    gam(cbind(pos_1,total)~s(age424,bs = "cr"),
+        family = binomial(link = "cloglog"),
+        method = "REML",
+        data = .)
   
+  link_inv <- family(model)$linkinv
+  df <- nrow(data) - length(coef(model))
+  p <- (1 - ci) / 2
+  
+  model |> 
+    predict(list(age424 = age_values), se.fit = TRUE) %>%
+    c(list(age = age_values), .) |> 
+    as_tibble() |> 
+    mutate(lwr = link_inv(fit + qt(    p, df) * se.fit),
+           upr = link_inv(fit + qt(1 - p, df) * se.fit),
+           fit = link_inv(fit)) |> 
+    select(- se.fit)
+}
+
+library(mgcv)
+
+age_profile_apr24 <- age_profile(sero_3bv) %>% 
+  mutate(sus = 1-fit,
+         lwr_s = 1-lwr,
+         upr_s = 1-upr) %>%  
+  ggplot(aes(x = age,y = fit))+
+  geom_line()+
+  geom_ribbon(aes(ymin = lwr,ymax = upr),fill = "blue",alpha = 0.4)+
+  scale_y_continuous(limits = c(0,1),
+                     name = "Seroprevalence (%)",
+                     labels = scales::label_percent())+
+  scale_x_continuous(limits = c(0,16),
+                     breaks = seq(0,16,by=2),
+                     name = "Age (years)")+
+  labs(tag = "A")+
+  theme_bw()
+
+
+age_profile_apr24_wo_ch2 <- sero_3bv %>% filter(hospital != "Bv Nhi Dong 2") %>% 
+age_profile() %>% 
+  mutate(sus = 1-fit,
+         lwr_s = 1-lwr,
+         upr_s = 1-upr) %>%  
+  ggplot(aes(x = age,y = fit))+
+  geom_line()+
+  geom_ribbon(aes(ymin = lwr,ymax = upr),fill = "blue",alpha = 0.4)+
+  scale_y_continuous(limits = c(0,1),
+                     name = "Seroprevalence (%)",
+                     labels = scales::label_percent())+
+  scale_x_continuous(limits = c(0,16),
+                     breaks = seq(0,16,by=2),
+                     name = "Age (years)")+
+  labs(tag = "B")+
+  theme_bw()
+
+age_profile_apr24 + age_profile_apr24_wo_ch2
+
+sero_3bv %>% 
+  ggplot(aes(x = age_at_apr24,
+             color = factor(hospital,
+                            labels = c("CH2","CCH","CH1"))))+
+  geom_density()+
+  theme_minimal()+
+  scale_x_continuous(breaks = seq(0,16,by = 2))+
+  labs(color = "Hospitals",x = "Age at Apr 2024 (years)", y = "Density")+
+  theme(legend.position = "bottom")
+
+## spatial distribution
+
+spatial_3bv <- sero_3bv %>% 
+  group_by(district) %>% 
+  count() %>% 
+  left_join(qhtp, ., by = join_by(varname_2 == district)) %>% 
+  ungroup() %>% 
+  ggplot() +
+  geom_sf(aes(fill = n,geometry = geom),
+          show.legend = T)+
+  paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
+                                    na.value="white",
+                                    name = "Number of \nserum samples")+
+  theme_void()+
+  theme(legend.position = "bottom")
+
+
+spatial_3bv_woch2 <- sero_3bv %>% 
+  filter(hospital != "Bv Nhi Dong 2") %>% 
+  group_by(district) %>% 
+  count() %>% 
+  left_join(qhtp, ., by = join_by(varname_2 == district)) %>% 
+  ungroup() %>% 
+  ggplot() +
+  geom_sf(aes(fill = n,geometry = geom),
+          show.legend = T)+
+  paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
+                                    na.value="white",
+                                    name = "Number of \nserum samples")+
+  theme_void()+
+  theme(legend.position = "bottom")
+
+spatial_3bv | spatial_3bv_woch2
+
+## ch1
+
+hcm_pop_19_age <- census2019 %>% mutate(
+  district = district %>% 
+    str_replace_all(
+      c("Quận 2" = "Thủ Đức",
+        "Quận 9" = "Thủ Đức")) %>% 
+    str_remove("Quận|Huyện") %>%
+    trimws(which = "both") %>% 
+    stri_trans_general("latin-ascii") %>% 
+    tolower()) %>% 
+  filter(age2 <= 15) %>% 
+  group_by(district,age2) %>% 
+  summarise(pop = sum(n)) %>% 
+  ungroup()
+
+plot_s_and_case <- function(hos){
+  
+  selected_hos <- case_when(
+    hos == "CH1" ~ "Children's Hospital 1",
+    hos == "CH2" ~ "Children's Hospital 2",
+    hos == "CCH" ~ "City Children's Hospital"
+  )
+  
+  hos_sero <- case_when(
+    hos == "CH1" ~ "CH1",
+    hos == "CH2" ~ "Bv Nhi Dong 2",
+    hos == "CCH" ~ "Bv Nhi Dong Tp"
+  )
+  
+  numcases_age <- meases_1812_3hos %>% 
+    filter(hospital == selected_hos & 
+             year(admission) %in% c(2024,2025) &
+             month(admission) >= 4) %>% 
+    # mutate(adm_week = as.Date(floor_date(admission, "week"))) %>% 
+    filter(age_gr != ">15") %>% 
+    group_by(admission,age_gr) %>% 
+    count() %>% 
+    ggplot(aes(x = admission,y=n))+
+    geom_col(position = position_dodge())+
+    geom_vline(xintercept = as.Date("2024-04-30"))+
+    facet_wrap(~ age_gr, ncol = 1) +
+    scale_x_date(limits = c(as.Date("2024-04-01"),as.Date("2025-01-01")),
+                 breaks = "1 month",
+                 date_labels = "%b %Y",
+                 name = "Admission date")+
+    labs(y = "Cases per day",tag = hos)+
+    theme_bw()
+  
+  age_profile_424 <- sero_3bv %>% 
+    filter(hospital == hos_sero) %>% 
+    age_profile() %>% 
+    mutate(sus = 1-fit,
+           lwr_s = 1-lwr,
+           upr_s = 1-upr)
+  
+  sp_424 <- age_profile_424 %>% 
+    ggplot(aes(x = age,y = fit))+
+    geom_line()+
+    geom_ribbon(aes(ymin = lwr,ymax = upr),fill = "blue",alpha = 0.4)+
+    scale_y_continuous(limits = c(0,1),
+                       name = "Seroprevalence (%)",
+                       labels = scales::label_percent())+
+    scale_x_continuous(limits = c(0,16),
+                       breaks = seq(0,16,by=2),
+                       name = "Age (years)")+
+    labs(tag = hos)+
+    theme_bw()
+  
+  district_serum <- sero_3bv %>% 
+    filter(hospital == hos_sero) %>% 
+    pull(district) %>% unique()
+  
+  num_sep <- hcm_pop_19_age %>% 
+    filter(district %in% district_serum) %>% 
+    group_by(age2) %>% 
+    summarise(pop = sum(pop)) %>% 
+    gam(pop~s(age2,k = 15),data = .) %>% 
+    predict(list(age2 = seq(0,16,le=512))) %>% 
+    as.tibble() %>% 
+    mutate(age = seq(0,16,le=512)) %>% 
+    left_join(age_profile_424,., by = join_by(age)) %>% 
+    mutate(num_s = sus*value) %>% 
+    ggplot(aes(x = age,y = value))+
+    geom_line()+
+    scale_x_continuous(breaks = seq(0,16,by=2))+
+    scale_y_continuous(limits = c(0,100000))+
+    labs(y = "Number of susceptible", x = "Age (years)")+
+    labs(tag = hos)+
+    theme_bw()
+  
+  a_ch1 <- num_sep/
+    sp_424
+  
+  b_ch1 <- numcases_age
+  
+  (a_ch1 | b_ch1) + 
+    plot_layout(widths = c(1, 2))
+  
+}
+
+plot_s_and_case(hos = "CCH")
+
+library(serosv)
+
+age_profile_424 <- sero_3bv %>% 
+  filter(hospital == "CH1") %>% 
+  age_profile() %>% 
+  mutate(sus = 1-fit,
+         lwr_s = 1-lwr,
+         upr_s = 1-upr)
+
+age_profile_424 %>% 
+  mutate(age_gr = cut(age,breaks=c(-1,5,10,15),
+                      labels= c("0-5","5-10","10-15"))) %>% 
+  group_by(age_gr) %>% 
+  summarise(s = mean(sus))
+
+
+library(contactdata)
+countries <- c("Vietnam")
+contact_data <- contact_df_countries(countries,
+                                     location = "all",
+                                     geographic_setting = c("urban"),
+                                     data_source = c("2020"))
+
+beta_matrix <- contact_data %>% 
+  filter(age_from %in% c("00_05","05_10","10_15") & 
+           age_to %in% c("00_05","05_10","10_15")) %>% 
+  select(-country) %>%
+  pivot_wider(names_from = age_to, values_from = contact) %>%
+  column_to_rownames("age_from") %>%
+  as.matrix() 
+  
+rownames(beta_matrix) <- NULL
+colnames(beta_matrix) <- NULL
+
+k <- 3 # number of population
+
+state <- c(
+  # proportion of each compartment for each population
+  s = c(0.594, 0.609,0.625), 
+  i = c(0.0001, 0.0001,0.0001),
+  r = c(  0,   0,0)
+)
+
+parameters <- list(
+  beta = beta_matrix,
+  nu = c(1/30, 1/30,1/30),
+  mu = 0.1,
+  k = k
+)
+times<-seq(0,10000,by=0.5)
+model <- sir_subpops_model(times, state, parameters)
+plot(model)
+

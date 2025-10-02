@@ -57,7 +57,8 @@ vaxreg_hcmc_measles <- readRDS("D:/OUCRU/sero_measles_nd2/data/vaxreg_hcmc_measl
 ## hcmc population
 census2019 <- readRDS("D:/OUCRU/hfmd/data/census2019.rds") %>% 
   filter(province == "Thành phố Hồ Chí Minh") %>% 
-  mutate(age2 = word(age,1))
+  mutate(age2 = word(age,1),
+         age2 = as.numeric(age2))
 
 hcm_pop_19 <- census2019 %>% mutate(
   district = district %>% 
@@ -362,144 +363,6 @@ p_num_cases_18 | p_num_cases_24 | p_num_sero
 
 ```
 
-### Data from EOC
-
-```{r}
-#| fig-width: 10
-#| fig-height: 8 
-#| out-width: "100%"
-
-## data description for CCH and CH1
-measles_1825_eoc <- read_excel("D:/OUCRU/sero_measles_nd2/data/SOI_2018-2025_EOC.xlsx", 
-                                sheet = "SOI_2018-2025")
-
-sero_ch1 <- read_csv("D:/OUCRU/sero_measles_nd2/data/20240808_measles_titer_oucru.csv")
-
-## filter bv nhi
-
-# measles_1825_eoc %>% 
-#   clean_names() %>% 
-#   filter(grepl('Nhi|nhi', ten_bv)) %>% 
-#   pull(ten_bv) %>% unique()
-
-meases_1812_3hos <- measles_1825_eoc %>% 
-  clean_names() %>% 
-  filter(ten_bv %in% c("Bệnh viện Nhi đồng 1",
-                       "Bệnh viện Nhi Đồng 1",
-                       "BV Nhi Đồng 1",
-                       "Bệnh viện Nhi đồng thành phố",
-                       "Bệnh viện Nhi đồng 2",
-                       "Bệnh viện Nhi Đồng 2")) %>% 
-  mutate(
-    district = quan_huyen %>% 
-      str_replace_all(
-        c("Quận 2" = "Thủ Đức",
-          "Quận 9" = "Thủ Đức")) %>% 
-      str_remove("Quận|Huyện|Thành phố|QUẬN") %>%
-      trimws(which = "both") %>% 
-      stri_trans_general("latin-ascii") %>% 
-      tolower(),
-    admission = as.Date(ngay_nv,format = "%d/%m/%Y"),
-    hospital = ten_bv %>% 
-      str_replace_all(
-        c("BV Nhi Đồng 1" = "Bệnh viện Nhi Đồng 1")) %>%
-      trimws(which = "both") %>% 
-      stri_trans_general("latin-ascii") %>% 
-      tolower() %>% 
-      factor(levels = c("benh vien nhi dong 1",
-                        "benh vien nhi dong 2",
-                        "benh vien nhi dong thanh pho"),
-             labels = c("Children's Hospital 1",
-                        "Children's Hospital 2",
-                        "City Children's Hospital")),
-    out_year = case_when(
-      nam_nv %in% c(2018,2019) ~ "2018-2019",
-      nam_nv %in% c(2024,2025) ~ "2024-2025"
-      )
-    ) %>% 
-  filter(district %in% qhtp$varname_2) %>%
-  distinct(.keep_all = TRUE)
-
-
-num_cases_3hos <- meases_1812_3hos %>% 
-  filter(!is.na(out_year)) %>% 
-  group_by(hospital,district,out_year) %>% 
-  count() %>% 
-  ungroup() %>% 
-  group_by(hospital,out_year) %>% 
-  group_modify(~.x %>% left_join(qhtp, ., by = join_by(varname_2 == district))) %>% 
-  ungroup() %>% 
-  ggplot() +
-  geom_sf(aes(fill = n,geometry = geom),
-          show.legend = T)+
-  paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
-                                    na.value="white",
-                                    name = "Number of cases")+
-  # geom_sf_text(aes(label = nl_name_2,geometry = geom),size=1.5,color = "black")+
-  # geom_sf(data = tdnd2, shape = 17,
-  #         color = "yellow", size = 1)+
-  facet_grid(hospital ~ out_year,
-             switch = "y") +
-  theme_void()+
-  theme(legend.position = "bottom",
-        legend.key.width =  unit(1, "cm"))
-
-## dec 2022 - Apr 2024
-num_sero_ch1 <- sero_ch1 %>% 
-  select(district,doc,moc,yoc) %>% 
-  na.omit(district) %>% 
-  mutate(district = district %>%
-           trimws(which = "both") %>% 
-           stri_trans_general("latin-ascii") %>% 
-           tolower()) %>% 
-  group_by(district) %>% 
-  count() %>% 
-  mutate(hospital = rep("nd1"),
-         col = rep("Dec 2022 - Apr 2024"))%>% 
-  ungroup()
-
-num_sero_ch2_cch <- sero  %>% 
-  select(pos,district,age,age_1y,age_5y,sampling_period,hospital) %>% 
-  mutate(
-    district = district %>% 
-      stri_trans_general("latin-ascii") %>% 
-      str_remove("Tp|^0") %>%
-      trimws(which = "both") %>% 
-      tolower() ,
-    samp_month = month(sampling_period),
-    samp_year = year(sampling_period)
-  ) %>% 
-  group_by(hospital,district) %>% 
-  count() %>% 
-  mutate(col = rep("Dec 2022 - Dec 2023")) %>% 
-  ungroup()
-
-
-num_sero_3hos_p <- rbind(num_sero_ch1,num_sero_ch2_cch) %>% 
-  group_by(hospital) %>% 
-  group_modify(~.x %>% left_join(qhtp, ., by = join_by(varname_2 == district))) %>% 
-  ungroup() %>% 
-  ggplot() +
-  geom_sf(aes(fill = n,geometry = geom),
-          show.legend = T)+
-  paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
-                                    na.value="white",
-                                    name = "Number of \n serum samples")+
-  # geom_sf_text(aes(label = nl_name_2,geometry = geom),size=1.5,color = "black")+
-  # geom_sf(data = tdnd2, shape = 17,
-  #         color = "yellow", size = 1)+
-  facet_wrap(~factor(hospital,
-                     levels = c("nd1","Bv Nhi Dong 2","Bv Nhi Dong Tp"),
-                     labels = c("Dec 2022 - Apr 2024",
-                                "Dec 2022 - Dec 2023",
-                                "Dec 2022-Dec 2023")),
-             ncol = 1) +
-  theme_void()+
-  theme(legend.key.width =  unit(1, "cm"))
-  
-num_cases_3hos|num_sero_3hos_p
-```
-
 ## Correlation between number of cases and serum samples
 
 ```{r}
@@ -652,155 +515,346 @@ catchment_ch2_1819 %>%
 The results show a similarity in the CH2 catchment areas of the two outbreaks (2018-2019 and 2024-2025). Hoc Mon was part of the CH2 catchment area in 2018-2019 but not in 2024-2025.
 :::
 
-# Correlation between sero-negative and prevalence in CH2 catchment area
 
-Now we only analyse districts in CH2 catchment area
+# Analysis data from EOC and serum from 3 hospital
+
+## Data from HCDC
 
 ```{r}
-#| fig-width: 8
-#| fig-height: 6 
+#| fig-width: 10
+#| fig-height: 8 
 #| out-width: "100%"
 
-district_consider <- catchment_ch2_1819 %>% 
-  filter(cut != "< 1") %>% 
-  pull(district) %>% as.character()
+## data description for CCH and CH1
+measles_1825_eoc <- read_excel("D:/OUCRU/sero_measles_nd2/data/SOI_2018-2025_EOC.xlsx", 
+                                sheet = "SOI_2018-2025")
 
-sero_neg_cm <- sero_nd2 %>% 
-  filter(district2 %in% district_consider) %>% 
-  group_by(district2) %>% 
-  count(pos) %>% 
-  pivot_wider(names_from = pos, 
-              values_from = n,
-              names_prefix = "pos_") %>% 
-  replace(is.na(.), 0) %>% 
+sero_ch1 <- read_csv("D:/OUCRU/sero_measles_nd2/data/20240808_measles_titer_oucru.csv")
+
+## filter bv nhi
+
+# measles_1825_eoc %>% 
+#   clean_names() %>% 
+#   filter(grepl('Nhi|nhi', ten_bv)) %>% 
+#   pull(ten_bv) %>% unique()
+
+meases_1812_3hos <- measles_1825_eoc %>% 
+  clean_names() %>% 
+  filter(ten_bv %in% c("Bệnh viện Nhi đồng 1",
+                       "Bệnh viện Nhi Đồng 1",
+                       "BV Nhi Đồng 1",
+                       "Bệnh viện Nhi đồng thành phố",
+                       "Bệnh viện Nhi đồng 2",
+                       "Bệnh viện Nhi Đồng 2")) %>% 
+  mutate(
+    district = quan_huyen %>% 
+      str_replace_all(
+        c("Quận 2" = "Thủ Đức",
+          "Quận 9" = "Thủ Đức")) %>% 
+      str_remove("Quận|Huyện|Thành phố|QUẬN") %>%
+      trimws(which = "both") %>% 
+      stri_trans_general("latin-ascii") %>% 
+      tolower(),
+    admission = as.Date(ngay_nv,format = "%d/%m/%Y"),
+    hospital = ten_bv %>% 
+      str_replace_all(
+        c("BV Nhi Đồng 1" = "Bệnh viện Nhi Đồng 1")) %>%
+      trimws(which = "both") %>% 
+      stri_trans_general("latin-ascii") %>% 
+      tolower() %>% 
+      factor(levels = c("benh vien nhi dong 1",
+                        "benh vien nhi dong 2",
+                        "benh vien nhi dong thanh pho"),
+             labels = c("Children's Hospital 1",
+                        "Children's Hospital 2",
+                        "City Children's Hospital")),
+    out_year = case_when(
+      nam_nv %in% c(2018,2019) ~ "2018-2019",
+      nam_nv %in% c(2024,2025) ~ "2024-2025"
+    ),
+    dob = as.Date(ngay_sinh,format="%d/%m/%Y"),
+    age2 = interval(dob, admission) / years(1),
+    age_gr = cut(age2,
+                 breaks = c(0,5,10,15,100),
+                 labels = c("0-5","5-10","10-15",">15"))
+  ) %>% 
+  filter(district %in% qhtp$varname_2) %>%
+  distinct(.keep_all = TRUE)
+
+
+num_cases_3hos <- meases_1812_3hos %>% 
+  filter(!is.na(out_year)) %>% 
+  group_by(hospital,district,out_year) %>% 
+  count() %>% 
   ungroup() %>% 
-  mutate(total = pos_0+pos_1,
-         sp = pos_1/total,
-         sneg = 1 - sp) %>% 
-  left_join(qhtp, ., by = join_by(varname_2 == district2)) %>% 
+  group_by(hospital,out_year) %>% 
+  group_modify(~.x %>% left_join(qhtp, ., by = join_by(varname_2 == district))) %>% 
   ungroup() %>% 
   ggplot() +
-  geom_sf(aes(fill = sneg,geometry = geom),show.legend = T)+
+  geom_sf(aes(fill = n,geometry = geom),
+          show.legend = T)+
   paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
-                                    labels = scales::label_percent(),
                                     na.value="white",
-                                    name = "Sero-negative")+
-  geom_sf_text(aes(label = nl_name_2,geometry = geom),size=1.5,color = "black")+
-  geom_sf(data = tdnd2, shape = 17,
-          color = "yellow", size = 1)+
+                                    name = "Number of cases")+
+  # geom_sf_text(aes(label = nl_name_2,geometry = geom),size=1.5,color = "black")+
+  # geom_sf(data = tdnd2, shape = 17,
+  #         color = "yellow", size = 1)+
+  facet_grid(hospital ~ out_year,
+             switch = "y") +
   theme_void()+
-  theme(legend.position = "top",
+  theme(legend.position = "bottom",
         legend.key.width =  unit(1, "cm"))
 
-prevalence_cm <- incidence_hcm %>% 
-  filter(district2 %in% district_consider) %>% 
-  group_by(district2) %>% 
+## dec 2022 - Apr 2024
+num_sero_ch1 <- sero_ch1 %>% 
+  select(district,doc,moc,yoc) %>% 
+  na.omit(district) %>% 
+  mutate(district = district %>%
+           trimws(which = "both") %>% 
+           stri_trans_general("latin-ascii") %>% 
+           tolower()) %>% 
+  group_by(district) %>% 
   count() %>% 
-  left_join(hcm_pop_19, ., by = join_by(district == district2)) %>%
-  na.omit(n) %>%
-  mutate(prevalence = n/pop) %>%
-  left_join(qhtp, ., by = join_by(varname_2 == district)) %>% 
+  mutate(hospital = rep("nd1"),
+         col = rep("Dec 2022 - Apr 2024"))%>% 
+  ungroup()
+
+num_sero_ch2_cch <- sero  %>% 
+  select(pos,district,age,age_1y,age_5y,sampling_period,hospital) %>% 
+  mutate(
+    district = district %>% 
+      stri_trans_general("latin-ascii") %>% 
+      str_remove("Tp|^0") %>%
+      trimws(which = "both") %>% 
+      tolower() ,
+    samp_month = month(sampling_period),
+    samp_year = year(sampling_period)
+  ) %>% 
+  group_by(hospital,district) %>% 
+  count() %>% 
+  mutate(col = rep("Dec 2022 - Dec 2023")) %>% 
+  ungroup()
+
+
+num_sero_3hos_p <- rbind(num_sero_ch1,num_sero_ch2_cch) %>% 
+  group_by(hospital) %>% 
+  group_modify(~.x %>% left_join(qhtp, ., by = join_by(varname_2 == district))) %>% 
+  ungroup() %>% 
   ggplot() +
-  geom_sf(aes(fill = prevalence*10000,geometry = geom),show.legend = T)+
+  geom_sf(aes(fill = n,geometry = geom),
+          show.legend = T)+
   paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
-                                    # labels = scales::label_percent(),
                                     na.value="white",
-                                    name = "Prevalence per 10.000 people")+
-  geom_sf_text(aes(label = nl_name_2,geometry = geom),size=1.5,color = "black")+
-  geom_sf(data = tdnd2, shape = 17,
-          color = "yellow", size = 1)+
+                                    name = "Number of \nserum samples")+
+  # geom_sf_text(aes(label = nl_name_2,geometry = geom),size=1.5,color = "black")+
+  # geom_sf(data = tdnd2, shape = 17,
+  #         color = "yellow", size = 1)+
+  facet_wrap(~factor(hospital,
+                     levels = c("nd1","Bv Nhi Dong 2","Bv Nhi Dong Tp"),
+                     labels = c("Dec 2022 - Apr 2024",
+                                "Dec 2022 - Dec 2023",
+                                "Dec 2022-Dec 2023")),
+             ncol = 1) +
   theme_void()+
-  theme(legend.position = "top")
-
-sero_neg_cm | prevalence_cm
+  theme()
+  
+num_cases_3hos|num_sero_3hos_p
 ```
 
-## Correlation test {.unnumbered}
-
-### All sero-sample {.unnumbered}
-
-I plotted prevalence and sero-negativity to see whether there is a linear relationship between these variables
+## Compare seroprevalence with and without CH2
 
 ```{r}
-#| fig-width: 8
-#| fig-height: 5 
+#| fig-width: 10
+#| fig-height: 8 
 #| out-width: "100%"
+#| fig-cap: "Figure A shows the age-dependent seroprevalence profile for April 2024 from serum samples collected at 3 hospitals. Figure B shows the age-dependent seroprevalence profile for April 2024 from serum samples excluding those from Children’s Hospital 2."
 
-sero_cm <- sero_nd2 %>% 
-  filter(district2 %in% district_consider) %>% 
-  group_by(district2) %>% 
-  count(pos) %>% 
-  pivot_wider(names_from = pos, 
-              values_from = n,
-              names_prefix = "pos_") %>% 
-  replace(is.na(.), 0) %>% 
-  ungroup() %>% 
-  mutate(total = pos_0+pos_1,
-         sp = pos_1/total,
-         sneg = 1 - sp)
+library(mgcv)
 
-cases_cm <- incidence_hcm %>% 
-  filter(district2 %in% district_consider) %>% 
-  group_by(district2) %>% 
+sero_ch1a <- sero_ch1 %>% 
+  select(commune,district,doc,moc,yoc,dob,mob,yob,pos,age) %>% 
+  na.omit(district) %>% 
+  mutate(district = district %>%
+           trimws(which = "both") %>% 
+           stri_trans_general("latin-ascii") %>% 
+           tolower(),
+         col_time = make_date(yoc,moc,doc),
+         hospital = rep("CH1"),
+         dob = make_date(yob,mob,dob))
+
+sero_ch2_cch <- sero  %>% 
+  select(pos,commune,district,age,age_1y,age_5y,sampling_period,hospital,doc,dob) %>% 
+  mutate(
+    district = district %>% 
+      stri_trans_general("latin-ascii") %>% 
+      str_remove("Tp|^0") %>%
+      trimws(which = "both") %>% 
+      tolower() ,
+    samp_month = month(sampling_period),
+    samp_year = year(sampling_period),
+    col_time = doc
+  )
+
+sero_3bv <- rbind(sero_ch1a[,c("age","commune","district","pos","col_time","dob","hospital")],
+      sero_ch2_cch[,c("age","commune","district","pos","col_time","dob","hospital")]) %>% 
+  mutate(age2 = round(age)) %>% 
+  # left_join(.,district_xy, by = join_by(district)) %>% 
+  mutate(yoc = year(col_time),
+         moc = month(col_time),
+         doc = day(col_time),
+         age_at_apr24 = interval(dob, as.Date("2024-04-30")) / years(1),
+         age424 = round(age_at_apr24))
+
+
+age_profile <- function(data, age_values = seq(0, 16, le = 512), ci = .95) {
+  model <- data %>% 
+    group_by(age424) %>%
+    count(pos) %>% 
+    pivot_wider(names_from = pos,
+                values_from = n,
+                names_prefix = "pos_") %>% 
+    replace(is.na(.), 0) %>% 
+    ungroup() %>% 
+    mutate(total = pos_0+pos_1,
+           sp = pos_1/total,
+           sneg = 1 - sp) %>% 
+    gam(cbind(pos_1,total)~s(age424,bs = "cr"),
+        family = binomial(link = "cloglog"),
+        method = "REML",
+        data = .)
+  
+  link_inv <- family(model)$linkinv
+  df <- nrow(data) - length(coef(model))
+  p <- (1 - ci) / 2
+  
+  model |> 
+    predict(list(age424 = age_values), se.fit = TRUE) %>%
+    c(list(age = age_values), .) |> 
+    as_tibble() |> 
+    mutate(lwr = link_inv(fit + qt(    p, df) * se.fit),
+           upr = link_inv(fit + qt(1 - p, df) * se.fit),
+           fit = link_inv(fit)) |> 
+    select(- se.fit)
+}
+
+
+age_profile_apr24 <- age_profile(sero_3bv) %>% 
+  mutate(sus = 1-fit,
+         lwr_s = 1-lwr,
+         upr_s = 1-upr) %>%  
+  ggplot(aes(x = age,y = fit))+
+  geom_line()+
+  geom_ribbon(aes(ymin = lwr,ymax = upr),fill = "blue",alpha = 0.4)+
+  scale_y_continuous(limits = c(0,1),
+                     name = "Seroprevalence (%)",
+                     labels = scales::label_percent())+
+  scale_x_continuous(limits = c(0,16),
+                     breaks = seq(0,16,by=2),
+                     name = "Age (years)")+
+  labs(tag = "A")+
+  theme_bw()
+
+
+age_profile_apr24_wo_ch2 <- sero_3bv %>% filter(hospital != "Bv Nhi Dong 2") %>% 
+age_profile() %>% 
+  mutate(sus = 1-fit,
+         lwr_s = 1-lwr,
+         upr_s = 1-upr) %>%  
+  ggplot(aes(x = age,y = fit))+
+  geom_line()+
+  geom_ribbon(aes(ymin = lwr,ymax = upr),fill = "blue",alpha = 0.4)+
+  scale_y_continuous(limits = c(0,1),
+                     name = "Seroprevalence (%)",
+                     labels = scales::label_percent())+
+  scale_x_continuous(limits = c(0,16),
+                     breaks = seq(0,16,by=2),
+                     name = "Age (years)")+
+  labs(tag = "B")+
+  theme_bw()
+
+age_profile_apr24 + age_profile_apr24_wo_ch2
+```
+
+```{r}
+#| fig-width: 10
+#| fig-height: 8 
+#| out-width: "100%"
+#| fig-cap: "Age density distribution of serum samples collected from 3 hospital"
+
+sero_3bv %>% 
+  ggplot(aes(x = age,
+             color = factor(hospital,
+                            labels = c("CH2","CCH","CH1"))))+
+  geom_density()+
+  theme_minimal()+
+  labs(color = "Hospitals",x = "Age (years)", y = "Density")+
+  theme(legend.position = "bottom")
+```
+
+```{r}
+#| fig-width: 10
+#| fig-height: 8 
+#| out-width: "100%"
+#| fig-cap: "Age density distribution in April 2024 of serum samples collected from 3 hospitals"
+
+sero_3bv %>% 
+  ggplot(aes(x = age_at_apr24,
+             color = factor(hospital,
+                            labels = c("CH2","CCH","CH1"))))+
+  geom_density()+
+  theme_minimal()+
+  scale_x_continuous(breaks = seq(0,16,by = 2))+
+  labs(color = "Hospitals",x = "Age in Apr 2024 (years)", y = "Density")+
+  theme(legend.position = "bottom")
+```
+
+
+
+```{r}
+#| fig-width: 10
+#| fig-height: 8 
+#| out-width: "100%"
+#| fig-cap: "Figure A shows the spatial distribution of serum samples collected from 3 hospitals. Figure B shows the spatial distribution of serum samples collected excluding samples from Children’s Hospital 2. "
+
+spatial_3bv <- sero_3bv %>% 
+  group_by(district) %>% 
   count() %>% 
-  left_join(hcm_pop_19, ., by = join_by(district == district2)) %>%
-  na.omit(n) %>%
-  mutate(prevalence_10000 = (n/pop)*10000)
-
-left_join(cases_cm,sero_cm,by = join_by(district == district2)) %>% 
-ggscatterstats(
-  # data = cor_matrix,
-  x = sneg,
-  y = prevalence_10000,
-  bf.message = FALSE,
-  marginal = FALSE, 
-  label.var = district,
-  xlab = "Sero-negative before 2024",
-  ylab = "Prevalence per 10000 people"
-)
-```
-
-::: callout-note
-The plot shows a linear trend but no significant correlation between sero-negativity and prevalence across districts in the CH2 catchment area.
-:::
-
-### Sero-sample in 2023 {.unnumbered}
-
-```{r}
-#| fig-width: 8
-#| fig-height: 5 
-#| out-width: "100%"
-
-sero_cm_23  <- sero_nd2 %>% 
-  filter(district2 %in% district_consider & samp_year == 2023) %>% 
-  group_by(district2) %>% 
-  count(pos) %>% 
-  pivot_wider(names_from = pos, 
-              values_from = n,
-              names_prefix = "pos_") %>% 
-  replace(is.na(.), 0) %>% 
+  left_join(qhtp, ., by = join_by(varname_2 == district)) %>% 
   ungroup() %>% 
-  mutate(total = pos_0+pos_1,
-         sp = pos_1/total,
-         sneg = 1 - sp)
+  ggplot() +
+  geom_sf(aes(fill = n,geometry = geom),
+          show.legend = T)+
+  paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
+                                    na.value="white",
+                                    name = "Number of \nserum samples")+
+  theme_void()+
+  labs(tag = "A")+
+  theme(legend.position = "bottom")
 
-left_join(cases_cm,sero_cm_23,by = join_by(district == district2)) %>% 
-ggscatterstats(
-  x = sneg,
-  y = prevalence_10000,
-  bf.message = FALSE,
-  marginal = FALSE, 
-  label.var = district,
-  xlab = "Sero-negative in 2023",
-  ylab = "Prevalence per 10000 people"
-)
+
+spatial_3bv_woch2 <- sero_3bv %>% 
+  filter(hospital != "Bv Nhi Dong 2") %>% 
+  group_by(district) %>% 
+  count() %>% 
+  left_join(qhtp, ., by = join_by(varname_2 == district)) %>% 
+  ungroup() %>% 
+  ggplot() +
+  geom_sf(aes(fill = n,geometry = geom),
+          show.legend = T)+
+  paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
+                                    na.value="white",
+                                    name = "Number of \nserum samples")+
+  theme_void()+
+  labs(tag = "B")+
+  theme(legend.position = "bottom")
+
+spatial_3bv | spatial_3bv_woch2
 ```
 
-## Age group {.unnumbered}
+# Hospital-specific age-dependent susceptibility profiles and corresponding hospitalizations
 
 ```{r}
-## district population per age group
-pop_dis_age_cm <- census2019 %>% mutate(
+hcm_pop_19_age <- census2019 %>% mutate(
   district = district %>% 
     str_replace_all(
       c("Quận 2" = "Thủ Đức",
@@ -808,341 +862,127 @@ pop_dis_age_cm <- census2019 %>% mutate(
     str_remove("Quận|Huyện") %>%
     trimws(which = "both") %>% 
     stri_trans_general("latin-ascii") %>% 
-    tolower(),
-  agegr = cut(as.numeric(age2), 
-              breaks = c(0,1,5,10,100),
-              labels = c("< 1y","1-5y","6-10y","> 10y"))
-  ) %>% 
-  group_by(district,agegr) %>% 
-  summarise(pop = sum(n),.groups = "drop")
+    tolower()) %>% 
+  filter(age2 <= 15) %>% 
+  group_by(district,age2) %>% 
+  summarise(pop = sum(n)) %>% 
+  ungroup()
 
-
-## prevalence per 10000 of districts
-pre_dis_agr <- incidence_hcm %>% 
-  filter(district2 %in% district_consider) %>% 
-  mutate(
-    agegr3 = case_when(
-      agegr2 %in% c("< 6m","6-9m","9-12m") ~ "< 1y",
-      !(agegr2 %in% c("< 6m","6-9m","9-12m")) ~ agegr2),
-    agegr3 = factor(agegr3, levels = c(c("< 1y","1-5y","6-10y","> 10y")))) %>% 
-  group_by(district2,agegr3) %>% 
-  count() %>% 
-  ungroup() %>% 
-  left_join(.,pop_dis_age_cm,by = join_by(district2 == district,
-                                          agegr3 == agegr)) %>% 
-  mutate(pre_10000 = (n/pop)*10000)  
-
-## sero negative per district
-
-sneg_dis_agr <- sero_nd2 %>% 
-  filter(district2 %in% district_consider) %>% 
-  mutate(age_gr = cut(as.numeric(age), 
-                      breaks = c(0,1,5,10,100),
-                      labels = c("< 1y","1-5y","6-10y","> 10y"))
-         ) %>% 
-  group_by(district2,age_gr) %>% 
-  count(pos) %>% 
-  pivot_wider(names_from = pos, 
-              values_from = n,
-              names_prefix = "pos_") %>% 
-  replace(is.na(.), 0) %>% 
-  ungroup() %>% 
-  mutate(total = pos_0+pos_1,
-         sp = pos_1/total,
-         sneg = 1 - sp)
-
-
-## plot function
-
-plot_dis_age_pre <- function(data,agegr){
-  df_plot <- data %>% filter(agegr3 == agegr)
+plot_s_and_case <- function(hos){
   
-  df_plot %>% 
-  left_join(qhtp, ., by = join_by(varname_2 == district2)) %>% 
-  ggplot() +
-  geom_sf(aes(fill = pre_10000,geometry = geom),show.legend = T)+
-  paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
-                                    # labels = scales::label_percent(),
-                                    na.value="white",
-                                    name = "Prevalence per 10.000 people") +
-  geom_sf_text(aes(label = nl_name_2,geometry = geom),size=1.5,color = "black")+
-  geom_sf(data = tdnd2, shape = 17,
-          color = "yellow", size = 1)+
-  # labs(tag = agegr) +
-  theme_void()+
-  theme(legend.position = "top")
-}
-
-plot_dis_age_sneg <- function(data,agegr){
+  selected_hos <- case_when(
+    hos == "CH1" ~ "Children's Hospital 1",
+    hos == "CH2" ~ "Children's Hospital 2",
+    hos == "CCH" ~ "City Children's Hospital"
+  )
   
-  data %>% filter(age_gr == agegr) %>% 
-    left_join(qhtp, ., by = join_by(varname_2 == district2)) %>% 
-    ggplot() +
-    geom_sf(aes(fill = sneg,geometry = geom),show.legend = T)+
-    paletteer::scale_fill_paletteer_c("ggthemes::Classic Red",
-                                      labels = scales::label_percent(),
-                                      na.value="white",
-                                      name = "Sero negative \n before 2024") +
-    geom_sf_text(aes(label = nl_name_2,geometry = geom),size=1.5,color = "black")+
-    geom_sf(data = tdnd2, shape = 17,
-            color = "yellow", size = 1)+
-    theme_void()+
-    theme(legend.position = "top",
-        legend.key.width =  unit(1, "cm"))
+  hos_sero <- case_when(
+    hos == "CH1" ~ "CH1",
+    hos == "CH2" ~ "Bv Nhi Dong 2",
+    hos == "CCH" ~ "Bv Nhi Dong Tp"
+  )
+  
+  numcases_age <- meases_1812_3hos %>% 
+    filter(hospital == selected_hos & 
+             year(admission) %in% c(2024,2025) &
+             month(admission) >= 4) %>% 
+    # mutate(adm_week = as.Date(floor_date(admission, "week"))) %>% 
+    filter(age_gr != ">15") %>% 
+    group_by(admission,age_gr) %>% 
+    count() %>% 
+    ggplot(aes(x = admission,y=n))+
+    geom_col(position = position_dodge())+
+    geom_vline(xintercept = as.Date("2024-04-30"))+
+    facet_wrap(~ age_gr, ncol = 1) +
+    scale_x_date(limits = c(as.Date("2024-04-01"),as.Date("2025-01-01")),
+                 breaks = "2 months",
+                 date_labels = "%b %Y",
+                 name = "Admission date")+
+    labs(y = "Cases per day",tag = hos)+
+    theme_bw()
+  
+  age_profile_424 <- sero_3bv %>% 
+    filter(hospital == hos_sero) %>% 
+    age_profile() %>% 
+    mutate(sus = 1-fit,
+           lwr_s = 1-lwr,
+           upr_s = 1-upr)
+  
+  sp_424 <- age_profile_424 %>% 
+    ggplot(aes(x = age,y = fit))+
+    geom_line()+
+    geom_ribbon(aes(ymin = lwr,ymax = upr),fill = "blue",alpha = 0.4)+
+    scale_y_continuous(limits = c(0,1),
+                       name = "Seroprevalence (%)",
+                       labels = scales::label_percent())+
+    scale_x_continuous(limits = c(0,16),
+                       breaks = seq(0,16,by=2),
+                       name = "Age (years)")+
+    labs(tag = hos)+
+    theme_bw()
+  
+  district_serum <- sero_3bv %>% 
+    filter(hospital == hos_sero) %>% 
+    pull(district) %>% unique()
+  
+  num_sep <- hcm_pop_19_age %>% 
+    filter(district %in% district_serum) %>% 
+    group_by(age2) %>% 
+    summarise(pop = sum(pop)) %>% 
+    gam(pop~s(age2,k = 15),data = .) %>% 
+    predict(list(age2 = seq(0,16,le=512))) %>% 
+    as.tibble() %>% 
+    mutate(age = seq(0,16,le=512)) %>% 
+    left_join(age_profile_424,., by = join_by(age)) %>% 
+    mutate(num_s = sus*value) %>% 
+    ggplot(aes(x = age,y = value))+
+    geom_line()+
+    scale_x_continuous(breaks = seq(0,16,by=2))+
+    scale_y_continuous(limits = c(0,120000))+
+    labs(y = "Number of susceptible", x = "Age (years)")+
+    labs(tag = hos)+
+    theme_bw()
+  
+  a_ch1 <- num_sep/
+    sp_424
+  
+  b_ch1 <- numcases_age
+  
+  (a_ch1 | b_ch1) + 
+    plot_layout(widths = c(1, 2))
+  
 }
-
 ```
 
-::: {.panel-tabset .nav-pills}
-## \< 1 year old
 
-```{r}
-plot_dis_age_pre(data = pre_dis_agr,agegr = "< 1y") | plot_dis_age_sneg(data = sneg_dis_agr ,agegr = "< 1y")
-
-## correlation plot
-left_join(pre_dis_agr,sneg_dis_agr,by = join_by(district2,
-                                                agegr3 == age_gr)) %>% 
-  replace(is.na(.), 0) %>% 
-  filter(agegr3 == "< 1y") %>% 
-  ggscatterstats(
-    # data = cor_matrix,
-    x = sneg,
-    y = pre_10000,
-    bf.message = FALSE,
-    marginal = FALSE, 
-    label.var = district2,
-    xlab = "Sero-negative before 2024",
-    ylab = "Prevalence per 10.000 people"
-  )
-```
-
-## 1 - 5 years old
-
-```{r}
-plot_dis_age_pre(data = pre_dis_agr,agegr = "1-5y") | plot_dis_age_sneg(data = sneg_dis_agr,agegr = "1-5y")
-
-## correlation plot
-left_join(pre_dis_agr,sneg_dis_agr,by = join_by(district2,
-                                                agegr3 == age_gr)) %>% 
-  replace(is.na(.), 0) %>% 
-  filter(agegr3 == "1-5y") %>% 
-  ggscatterstats(
-    # data = cor_matrix,
-    x = sneg,
-    y = pre_10000,
-    bf.message = FALSE,
-    marginal = FALSE, 
-    label.var = district2,
-    xlab = "Sero-negative before 2024",
-    ylab = "Prevalence per 10.000 people"
-  )
-```
-
-## 6 - 10 years old
-
-```{r}
-plot_dis_age_pre(data = pre_dis_agr,agegr = "6-10y") | plot_dis_age_sneg(data = sneg_dis_agr,agegr = "6-10y")
-
-## correlation plot
-left_join(pre_dis_agr,sneg_dis_agr,by = join_by(district2,
-                                                agegr3 == age_gr)) %>% 
-  replace(is.na(.), 0) %>% 
-  filter(agegr3 == "6-10y") %>% 
-  ggscatterstats(
-    # data = cor_matrix,
-    x = sneg,
-    y = pre_10000,
-    bf.message = FALSE,
-    marginal = FALSE, 
-    label.var = district2,
-    xlab = "Sero-negative before 2024",
-    ylab = "Prevalence per 10.000 people"
-  )
-```
-
-## \> 10 years old
-
-```{r}
-plot_dis_age_pre(data = pre_dis_agr,agegr = "> 10y") | plot_dis_age_sneg(data = sneg_dis_agr,agegr = "> 10y") 
-
-## correlation plot
-left_join(pre_dis_agr,sneg_dis_agr,by = join_by(district2,
-                                                agegr3 == age_gr)) %>% 
-  replace(is.na(.), 0) %>% 
-  filter(agegr3 == "> 10y") %>% 
-  ggscatterstats(
-    # data = cor_matrix,
-    x = sneg,
-    y = pre_10000,
-    bf.message = FALSE,
-    marginal = FALSE, 
-    label.var = district2,
-    xlab = "Sero-negative before 2024",
-    ylab = "Prevalence per 10.000 people"
-  )
-```
-:::
-
-# Age-dependent susceptibility profiles in 2023
-
-## Serological data
-
-In this section, I followed the [@hens2015] article. Using GAM model fitted to seroprevalence data of districts in CH2 catchment area with cloglog link function. The smooth function $s_1$ was one-dimensional cubic splines, and $te$ referring to tensor product thin-plate regression splines allowing for differential smoothing along the two dimensions.
-
-$$
-seropositive \sim s_1(age) + te(x,y)
-$$ With x, y are spatial coordinates.
-
-```{r}
-## extract x and y coordinates
-
-centroids <- st_centroid(qhtp)
-
-district_xy <- centroids %>%
-  mutate(
-    lon = st_coordinates(centroids)[,1],
-    lat = st_coordinates(centroids)[,2]
-  ) %>%
-  select(district = varname_2, lon, lat) %>% 
-  as.data.frame() %>% 
-  select(-geom)
-
-sero_nd2_cm_23 <- sero_nd2 %>% 
-  filter(district2 %in% district_consider & samp_year == 2023) %>% 
-  group_by(district2,age_1y) %>% 
-  count(pos) %>% 
-  pivot_wider(names_from = pos, 
-              values_from = n,
-              names_prefix = "pos_") %>% 
-  replace(is.na(.), 0) %>% 
-  ungroup() %>% 
-  mutate(total = pos_0+pos_1) %>%
-  group_by(district2) %>%
-  left_join(.,district_xy, by = join_by(district2 == district))
-```
-
-:::: {.panel-tabset .nav-pills}
-## Model
-
-```{r}
-library(mgcv)
-library(plotly)
-
-attach(sero_nd2_cm_23)
-y = cbind(pos_1,total)
-a = age_1y
-
-model <- gam(y~s(a,bs = "cr") + te(lat,lon,bs = "tp"),
-             family=binomial(link="cloglog"))
-
-new_df <- district_xy %>% 
-  filter(district %in% district_consider) %>% 
-  crossing(a = seq(0, 15, length.out = 512)) %>% 
-  select(-district)
-
-sp_dis_cm <- predict(model,new_df,type = "response") %>% 
-  tibble(new_df,
-         sero = .,
-         sneg = 1 - sero) %>% 
-  left_join(.,district_xy, by = join_by(lat,lon))
-
-dis_lvls_sp_based <- reorder(sp_dis_cm$district,sp_dis_cm$sneg) %>% levels()
-
-sp_dis_cm %>% 
-  ggplot(aes(x = a,
-             y = sneg,
-             color = factor(district,levels = dis_lvls_sp_based)))+
-  geom_line()+
-  scale_y_continuous(name = "Seronegative in 2023")+
-  scale_color_discrete(name = "Districts",
-                       guide = guide_legend(reverse = TRUE))+
-  labs(x = "Age")+
-  theme_minimal()
-```
-
-::: callout-note
-The order of legend is similiar with the color line
-:::
-
-## Data
-
-```{r}
-sero_nd2_cm_23 %>% head(20)
-```
-::::
-
-## Vaccine coverage data
-
-Follow [@hens2015], I use the model to estimate age-dependent susceptibility profiles in 2023.
-
-$$
-1-s_{(a)} = e^{-\gamma_2 \times (a-{age\ at \ dose \ 2})} \times \rho v_2
-$$
-
-$\rho$ is the seroconversion rate = 0.977 (95% CI: 0.959 − 0.990), $\gamma_2$ is the decay rates of vaccine-induced immunity related to dose 2, age at dose 2 is 18 month = 1.5 years. $v_2$ is the measles dose 2 vaccine coverage of districts
+## CH1
 
 ```{r}
 #| fig-width: 10
-#| fig-height: 5 
+#| fig-height: 6 
 #| out-width: "100%"
 
-vax_cov_age_dis <- vaxreg_hcmc_measles %>% 
-  mutate(age_at_2023 = interval(dob, as.Date("2023-12-31")) / years(1),
-         age_round_23 = round(age_at_2023),
-         district2 = district %>% 
-           trimws(which = "both") %>% 
-           stri_trans_general("latin-ascii") %>% 
-           tolower()) %>% 
-  group_by(district2,age_round_23) %>% 
-  count(is_m2) %>% 
-  pivot_wider(names_from = is_m2, 
-              values_from = n,
-              names_prefix = "m2_") %>% 
-  replace(is.na(.), 0) %>% 
-  ungroup() %>% 
-  mutate(m2_covr = m2_1/(m2_0+m2_1))
-
-vax_cov_age_dis %>% 
-  filter(district2 %in% district_consider) %>% 
-  filter(age_round_23 != 0) %>%
-  mutate(age_from_m2 = age_round_23-1.5,
-         adjust_cvr = exp(-0.008*(age_from_m2))*0.977*m2_covr) %>% 
-  ggplot(aes(x = factor(district2,levels = dis_lvls_sp_based),
-             y = 1 - adjust_cvr))+
-  geom_col()+
-  facet_wrap(~age_round_23, ncol = 4,
-              labeller = labeller(age_round_23 = function(x) paste0(x, " year-old")))+
-  scale_y_continuous(limits = c(0,1),
-                     labels = scales::label_percent())+
-  labs(x = "Districts", y = "The proportion of susceptible until the end of 2023")+
-  theme_bw()+
-  theme(axis.text.x = element_text(angle = 45,vjust = 0.5))
+plot_s_and_case(hos = "CH1")
 ```
 
-::: callout-note
-The order of districts in x axis (left to right) follow the increase of seronegative in the plot above
-:::
 
-## Prevalence per 10000 people of each districts
-
-Let see the age distribution of measles prevalence in CH2 cathment
+## CH2
 
 ```{r}
 #| fig-width: 10
-#| fig-height: 5 
+#| fig-height: 6 
 #| out-width: "100%"
 
-pre_dis_agr %>% 
-  group_by(agegr3) %>% 
-  ggplot(aes(x = factor(district2,levels = dis_lvls_sp_based), 
-             y = pre_10000))+
-  geom_col()+
-  facet_wrap(~agegr3,ncol = 4)+
-  labs(x = "Districts", y = "Prevalence per 10.000 people")+
-  theme_bw()+
-  theme(axis.text.x = element_text(angle = 45,vjust = 0.5))
+plot_s_and_case(hos = "CH2")
 ```
 
-::: callout-note
-The order of districts in x axis (left to right) follow the increase of seronegative in the plot above
-:::
+
+## CCH
+
+```{r}
+#| fig-width: 10
+#| fig-height: 6 
+#| out-width: "100%"
+
+plot_s_and_case(hos = "CCH")
+```
