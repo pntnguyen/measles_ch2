@@ -851,6 +851,79 @@ spatial_3bv_woch2 <- sero_3bv %>%
 spatial_3bv | spatial_3bv_woch2
 ```
 
+
+## Times series 2018-2019 outbreak
+
+```{r}
+#| fig-width: 10
+#| fig-height: 8 
+#| out-width: "100%"
+
+cases_hcm_1819$onset_month <- format(cases_hcm_1819$admission, format = "%b-%Y")
+
+cases_hcm_1819$onset_month <- factor(cases_hcm_1819$onset_month, 
+                               levels = paste(month.abb[1:12], 
+                                              cases_hcm_1819$adm_year, 
+                                              sep = "-") %>% unique())
+
+df_plot2 <- cases_hcm_1819 |> 
+  mutate(district = district %>% 
+           str_replace_all(
+             c("Quận 2" = "Thủ Đức",
+               "Quận 9" = "Thủ Đức")) %>% 
+           str_remove("Quận|Huyện") %>%
+           trimws(which = "both") %>% 
+           stri_trans_general("latin-ascii") %>% 
+           tolower()) %>% 
+  group_by(onset_month,district) |> 
+  count() |> 
+  as.data.frame() |> 
+  complete(onset_month, district, fill = list(n = 0)) |>
+  arrange(onset_month) |> 
+  filter(!onset_month %in% paste(month.abb[1:4], 2018, sep = "-")) |>
+  group_by(district) |> 
+  mutate(
+    cumn = cumsum(n)
+  )
+
+library(ggsci)
+
+df_plot2 %>% 
+  left_join(.,hcm_pop_19, by = join_by(district)) %>% 
+  mutate(cuminc = cumn/pop*100000) %>% 
+  ungroup() %>% 
+  group_by(onset_month) %>% 
+  group_modify(~.x %>%
+                 left_join(qhtp, ., by = join_by(varname_2 == district))) %>% 
+  ggplot() +
+  geom_sf(aes(fill = cuminc,geometry = geom)) +
+  scale_fill_gsea(
+    # rescaler = function(x, to = c(0, 1), from = NULL) {
+    #   scales::rescale(x^0.5)
+    # },
+    # na.value = "white",
+    # breaks = c(10, 30, 50, 70, 90)
+  ) +
+  facet_wrap(~ onset_month, nrow = 4)+
+  labs(fill = "Cumulative incidence rate \n(per 100,000 population)") +
+  theme_bw() +
+  theme(
+    legend.position = "top",
+    legend.key.size = unit(4, "mm"),
+    axis.line = element_blank(),
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    plot.margin = margin(0, 0, 0, 0),
+    axis.ticks.length = unit(0, "pt"),
+    plot.tag = element_text(face = "bold", size = 14)
+  )
+
+```
+
+
 # Hospital-specific age-dependent susceptibility profiles and corresponding hospitalizations
 
 ```{r}
