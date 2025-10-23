@@ -862,9 +862,9 @@ spatial_3bv | spatial_3bv_woch2
 cases_hcm_1819$onset_month <- format(cases_hcm_1819$admission, format = "%b-%Y")
 
 cases_hcm_1819$onset_month <- factor(cases_hcm_1819$onset_month, 
-                               levels = paste(month.abb[1:12], 
-                                              cases_hcm_1819$adm_year, 
-                                              sep = "-") %>% unique())
+                               levels = paste(rep(month.abb[1:12], times = 2), 
+                                              rep(c(2018, 2019), each = 12), 
+                                              sep = "-"))
 
 df_plot2 <- cases_hcm_1819 |> 
   mutate(district = district %>% 
